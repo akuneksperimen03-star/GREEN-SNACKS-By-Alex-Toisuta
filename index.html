@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ULAR-ULAR</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#14532d">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="ULAR-ULAR">
+<style>
+:root{--bg:#f4f7ee;--card:#fff;--ink:#1c2b1a;--board:#e6efd8;--grid:#d5e2c4;--btn:#2f9e44;--btnt:#fff;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f1a10;--card:#1a2a1b;--ink:#e8f5e2;--board:#12200f;--grid:#1a2c17}}
+:root[data-theme="dark"]{--bg:#0f1a10;--card:#1a2a1b;--ink:#e8f5e2;--board:#12200f;--grid:#1a2c17}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;display:flex;flex-direction:column;align-items:center;padding:10px;gap:12px;min-height:100vh;min-height:100dvh;touch-action:none;overscroll-behavior:none;-webkit-user-select:none;user-select:none}
+h1{margin:0;font-size:24px;letter-spacing:2px;color:#fff;background:#14532d;padding:8px 20px;border-radius:14px;text-align:center}
+.bar{display:flex;gap:10px;width:100%;max-width:420px}
+.stat{flex:1;background:var(--card);border-radius:12px;padding:8px 12px;text-align:center}
+.stat b{display:block;font-size:22px}.stat span{font-size:12px;opacity:.7}
+canvas{display:block;background:var(--board);border-radius:14px;max-width:100%;touch-action:none;box-shadow:0 4px 16px rgba(0,0,0,.15)}
+button{font:inherit;border:0;border-radius:12px;background:var(--btn);color:var(--btnt);padding:12px 22px;font-weight:600;cursor:pointer}
+button:active{transform:scale(.95)}
+.wrap{display:flex;flex-direction:column;align-items:flex-start;gap:8px}
+#go{width:44px;height:44px;padding:0;border-radius:50%;font-size:18px;line-height:1;background:#14532d;color:#fff;box-shadow:0 2px 6px rgba(0,0,0,.3);touch-action:manipulation;user-select:none;-webkit-user-select:none}
+.credit{margin-top:auto;background:#e6f0da;border-radius:999px;padding:8px 18px;font-weight:800;font-size:15px;letter-spacing:.5px;text-align:center}
+.gs{color:#14532d}.by{color:#fff;background:#14532d;border-radius:8px;padding:1px 8px;font-size:12px;margin:0 4px}.ak{color:#0b2a6b}
+small{opacity:.7;text-align:center;max-width:420px}
+</style>
+</head>
+<body>
+<h1>🐍 ULAR-ULAR</h1>
+<div class="bar">
+<div class="stat"><b id="sc">0</b><span>Skor</span></div>
+<div class="stat"><b id="lv">1</b><span>Level</span></div>
+<div class="stat"><b id="hi">0</b><span>Rekor</span></div>
+</div>
+<div class="wrap"><canvas id="c"></canvas><button id="go">▶</button></div>
+<small>Geser layar (atau panah/WASD) untuk belok. Tombol jeda ada di kiri bawah papan. Makan 🍎 (+1) dan ⭐ emas (+5, cepat hilang!). Dinding tembus ke sisi lain, tapi jangan gigit badan sendiri.</small>
+<div class="credit">“<span class="gs">GREEN SNACKS</span>” <span class="by">By</span> <span class="ak">Alex Toisuta</span></div>
+<script>
+const N=20,cv=document.getElementById('c'),g=cv.getContext('2d');
+const $=id=>document.getElementById(id);
+let ac=null;
+function snd(f,d,type='square',to=f,v=.08,delay=0){try{ac=ac||new(window.AudioContext||window.webkitAudioContext)();if(ac.state=='suspended')ac.resume();const t=ac.currentTime+delay,o=ac.createOscillator(),n=ac.createGain();o.type=type;o.frequency.setValueAtTime(f,t);o.frequency.exponentialRampToValueAtTime(to,t+d);n.gain.setValueAtTime(v,t);n.gain.exponentialRampToValueAtTime(.001,t+d);o.connect(n);n.connect(ac.destination);o.start(t);o.stop(t+d)}catch(e){}}
+const sApple=()=>snd(500,.1,'square',900);
+const sStar=()=>[700,880,1100,1400].forEach((f,i)=>snd(f,.14,'triangle',f,.1,i*.07));
+const sDie=()=>{snd(420,.7,'sawtooth',50,.12);snd(210,.7,'square',40,.08,.1)};
+let S=Math.min(400,window.innerWidth-32),cell;
+function size(){S=Math.max(200,Math.min(460,innerWidth-20,innerHeight-320));document.querySelector(".bar").style.maxWidth=S+"px";cv.width=cv.height=S;cell=S/N;draw()}
+let q=[],snake,dir,food,star,score,level,state='ready',timer,hi=0,tick=0;
+try{hi=+localStorage.getItem('ular-hi')||0}catch(e){}
+$('hi').textContent=hi;
+function rnd(){return{x:Math.random()*N|0,y:Math.random()*N|0}}
+function free(){let p;do{p=rnd()}while(snake.some(s=>s.x==p.x&&s.y==p.y)||(food&&food.x==p.x&&food.y==p.y));return p}
+function reset(){snake=[{x:10,y:10},{x:9,y:10},{x:8,y:10}];dir={x:1,y:0};q=[];food=null;food=free();star=null;score=0;level=1;tick=0;$('sc').textContent=0;$('lv').textContent=1}
+function speed(){return Math.max(55,140-(level-1)*10)}
+function loop(){
+ if(state!='play')return;
+ if(q.length)dir=q.shift();tick++;
+ const h={x:(snake[0].x+dir.x+N)%N,y:(snake[0].y+dir.y+N)%N};
+ if(snake.some(s=>s.x==h.x&&s.y==h.y)){return over()}
+ snake.unshift(h);
+ let ate=false;
+ if(h.x==food.x&&h.y==food.y){score++;ate=true;sApple();food=free();if(!star&&Math.random()<.25){star={...free(),t:45}}}
+ else if(star&&h.x==star.x&&h.y==star.y){score+=5;ate=true;sStar();star=null;for(let i=0;i<2;i++)snake.push({...snake[snake.length-1]})}
+ if(!ate)snake.pop();
+ if(star&&--star.t<=0)star=null;
+ level=1+(score/5|0);
+ $('sc').textContent=score;$('lv').textContent=level;
+ draw();
+ timer=setTimeout(loop,speed());
+}
+function over(){
+ state='over';clearTimeout(timer);sDie();
+ if(score>hi){hi=score;$('hi').textContent=hi;try{localStorage.setItem('ular-hi',hi)}catch(e){}}
+ $('go').textContent='▶';draw();
+ if(navigator.vibrate)try{navigator.vibrate(200)}catch(e){}
+}
+function msg(t,s){g.fillStyle='rgba(0,0,0,.55)';g.fillRect(0,0,S,S);g.fillStyle='#fff';g.textAlign='center';g.font='bold '+S/11+'px system-ui';g.fillText(t,S/2,S/2);g.font=S/22+'px system-ui';g.fillText(s,S/2,S/2+S/11)}
+function draw(){
+ if(!snake)return;
+ g.clearRect(0,0,S,S);
+ g.strokeStyle=getComputedStyle(document.documentElement).getPropertyValue('--grid');g.lineWidth=1;
+ for(let i=1;i<N;i++){g.beginPath();g.moveTo(i*cell,0);g.lineTo(i*cell,S);g.moveTo(0,i*cell);g.lineTo(S,i*cell);g.stroke()}
+ g.textAlign='center';g.textBaseline='middle';g.font=cell*.9+'px serif';
+ g.fillText('🍎',(food.x+.5)*cell,(food.y+.55)*cell);
+ if(star){const p=1+.15*Math.sin(Date.now()/100);g.font=cell*.9*p+'px serif';g.globalAlpha=star.t<15&&star.t%2?.4:1;g.fillText('⭐',(star.x+.5)*cell,(star.y+.55)*cell);g.globalAlpha=1}
+ snake.forEach((s,i)=>{
+  g.fillStyle=`hsl(${130-i*3},65%,${i?45:35}%)`;
+  g.beginPath();g.roundRect(s.x*cell+1,s.y*cell+1,cell-2,cell-2,i?5:8);g.fill();
+ });
+ const h=snake[0],ex=dir.x*cell*.15,ey=dir.y*cell*.15,px=-dir.y*cell*.2,py=dir.x*cell*.2;
+ g.fillStyle='#fff';
+ [[1,1],[-1,-1]].forEach(([a])=>{g.beginPath();g.arc((h.x+.5)*cell+ex+px*a,(h.y+.5)*cell+ey+py*a,cell*.11,0,7);g.fill()});
+ if(state=='ready')msg('Siap?','Tekan ▶ atau geser layar');
+ if(state=='pause')msg('Jeda','Tekan ▶ di kiri bawah');
+ if(state=='over')msg('Game Over','Skor: '+score);
+}
+function turn(x,y){
+ if(state=='ready'||state=='over')start();
+ else if(state=='pause')resume();
+ const l=q.length?q[q.length-1]:dir;
+ if((x==-l.x&&y==-l.y)||(x==l.x&&y==l.y))return;
+ if(q.length<3)q.push({x,y});
+}
+function start(){snd(440,.05,'sine',440,.01);reset();state='play';$('go').textContent='⏸';clearTimeout(timer);draw();timer=setTimeout(loop,speed())}
+function resume(){state='play';$('go').textContent='⏸';timer=setTimeout(loop,speed())}
+function toggle(){
+ if(state=='play'){state='pause';clearTimeout(timer);$('go').textContent='▶';draw()}
+ else if(state=='pause')resume();else start();
+}
+$('go').onpointerdown=e=>{e.preventDefault();toggle()};
+const K={ArrowUp:[0,-1],w:[0,-1],ArrowDown:[0,1],s:[0,1],ArrowLeft:[-1,0],a:[-1,0],ArrowRight:[1,0],d:[1,0]};
+addEventListener('keydown',e=>{
+ if(K[e.key]){e.preventDefault();turn(...K[e.key])}
+ else if(e.key==' '){e.preventDefault();toggle()}
+});
+let t0=null;
+document.addEventListener('touchstart',e=>{t0=e.touches[0]},{passive:true});
+document.addEventListener('touchmove',e=>{
+ e.preventDefault();
+ if(!t0)return;const t=e.touches[0],dx=t.clientX-t0.clientX,dy=t.clientY-t0.clientY;
+ if(Math.max(Math.abs(dx),Math.abs(dy))<24)return;
+ Math.abs(dx)>Math.abs(dy)?turn(dx>0?1:-1,0):turn(0,dy>0?1:-1);
+ t0=t;
+},{passive:false});
+document.addEventListener('touchend',()=>{t0=null},{passive:true});
+setInterval(()=>{if(state=='play'&&star)draw()},100);
+addEventListener('resize',size);
+reset();size();
+if("serviceWorker"in navigator&&location.protocol.startsWith("http"))navigator.serviceWorker.register("sw.js").catch(()=>{});
+</script>
+</body>
+</html>
